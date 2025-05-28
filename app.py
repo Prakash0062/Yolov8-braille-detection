@@ -7,7 +7,7 @@ from ultralytics import YOLO
 from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__)
-model = YOLO("best.pt")
+model = YOLO(r'yolov8n.pt')
 
 def detect_braille(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
