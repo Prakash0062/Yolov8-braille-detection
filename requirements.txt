@@ -8,3 +8,4 @@ matplotlib==3.8.4
 Werkzeug==3.0.1
 tensorflow==2.15.0
 ultralytics
+gunicorn
