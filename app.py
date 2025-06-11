@@ -1,44 +1,66 @@
 import io
+import os
 import base64
 import numpy as np
 import cv2
 from PIL import Image
-from ultralytics import YOLO
 from flask import Flask, request, jsonify, render_template
+import requests
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-model = YOLO(r'yolov8n.pt')
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-def detect_braille(img_bytes):
-    img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+# Function to detect Braille using Roboflow direct HTTP API
+def detect_braille(image_path, conf_threshold=0.25):
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+
+    # Run inference using HTTP request
+    response = requests.post(
+        "https://detect.roboflow.com/braille-final-05-05/2",
+        params={
+            "api_key": "30oxLfVGmeadjEk3NGVB"
+        },
+        files={
+            "file": image_bytes
+        }
+    )
+
+    result = response.json()
+
+    # Load image
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img_np = np.array(img)
 
-    results = model(img_np)
-
+    # Process detections
     detections = []
-    for result in results:
-        for box in result.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].int().tolist()
-            confidence = round(float(box.conf[0]), 2)
-            label = model.names[int(box.cls[0])]
-            x_center = (x1 + x2) // 2
-            y_center = (y1 + y2) // 2
-            detections.append({
-                'box': [x1, y1, x2, y2],
-                'confidence': confidence,
-                'label': label,
-                'x_center': x_center,
-                'y_center': y_center
-            })
+    for pred in result.get("predictions", []):
+        if pred["confidence"] < conf_threshold:
+            continue
+        x_center, y_center = int(pred["x"]), int(pred["y"])
+        width, height = int(pred["width"]), int(pred["height"])
+        x1 = x_center - width // 2
+        y1 = y_center - height // 2
+        x2 = x_center + width // 2
+        y2 = y_center + height // 2
+
+        detections.append({
+            'box': [x1, y1, x2, y2],
+            'confidence': round(pred["confidence"], 2),
+            'label': pred["class"],
+            'x_center': x_center,
+            'y_center': y_center
+        })
 
     if not detections:
         return "", []
 
-    # Step 1: Sort detections by vertical position
+    # Sort and group detections into rows
     detections.sort(key=lambda d: d['y_center'])
-
-    # Step 2: Group into rows manually
-    row_thresh = 20  # Adjust this based on average line spacing
+    row_thresh = 20
     rows = []
     current_row = []
     last_y = -100
@@ -52,31 +74,25 @@ def detect_braille(img_bytes):
             last_y = y
         else:
             current_row.append(det)
-            last_y = (last_y + y) // 2  # smooth the row height
+            last_y = (last_y + y) // 2
 
     if current_row:
         rows.append(current_row)
 
-    # Step 3: Sort each row left to right
     detected_text_rows = []
     for row in rows:
         sorted_row = sorted(row, key=lambda d: d['x_center'])
         row_labels = [d['label'] for d in sorted_row]
         detected_text_rows.append(''.join(row_labels))
 
-    # Step 4: Draw boxes and labels
-    colors = [
-        (0, 255, 0), (0, 0, 255), (255, 0, 0),
-        (0, 255, 255), (255, 0, 255), (255, 255, 0),
-        (128, 0, 128), (0, 128, 128)
-    ]
-    for idx, det in enumerate(detections):
+    # Draw boxes on image
+    for det in detections:
         x1, y1, x2, y2 = det['box']
-        conf = det['confidence']
         label = det['label']
-        color = colors[idx % len(colors)]
-        cv2.rectangle(img_np, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(img_np, f'{label} {conf}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        conf = det['confidence']
+        cv2.rectangle(img_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(img_np, f'{label} {conf}', (x1, y1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
     _, buffer = cv2.imencode('.jpg', cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
     img_str = base64.b64encode(buffer).decode('utf-8')
@@ -90,18 +106,24 @@ def index():
 @app.route('/detect', methods=['POST'])
 def detect():
     if 'image' not in request.files:
-        return jsonify({'error': 'No image file uploaded'}), 400
+        return jsonify({'error': 'No image uploaded'}), 400
 
     image_file = request.files['image']
-    image_bytes = image_file.read()
+    filename = secure_filename(image_file.filename)
+    image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    image_file.save(image_path)
+
+    conf_threshold = float(request.form.get("confidence", 0.25))
 
     try:
-        detected_image, detected_text_rows = detect_braille(image_bytes)
+        img_str, text_rows = detect_braille(image_path, conf_threshold)
         return jsonify({
-            'detected_image': f'data:image/jpeg;base64,{detected_image}',
-            'detected_text_rows': detected_text_rows
+            'detected_image': f'data:image/jpeg;base64,{img_str}',
+            'detected_text_rows': text_rows
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
