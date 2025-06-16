@@ -9,9 +9,7 @@ opencv-python==4.8.0.76
 matplotlib==3.8.4
 
 # ML Frameworks (only include if you use them)
-torch==2.5.1
-torchvision==0.17.1
-tensorflow==2.15.0
+
 
 # YOLOv8
 ultralytics==8.1.38
