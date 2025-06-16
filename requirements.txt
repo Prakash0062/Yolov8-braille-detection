@@ -1,3 +1,4 @@
+# Core App
 streamlit==1.35.0
 pytesseract==0.3.10
 Pillow==10.2.0
@@ -7,15 +8,13 @@ numpy==1.24.4
 opencv-python==4.8.0.76
 matplotlib==3.8.4
 
-# PyTorch & TorchVision
+# ML Frameworks (only include if you use them)
 torch==2.5.1
 torchvision==0.17.1
-
-# TensorFlow
 tensorflow==2.15.0
 
-# YOLO (Ultralytics)
+# YOLOv8
 ultralytics==8.1.38
 
-# Optional for better server support
+# For production Flask/fastapi (optional)
 gunicorn==21.2.0
