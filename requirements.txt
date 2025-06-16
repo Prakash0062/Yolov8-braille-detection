@@ -7,10 +7,12 @@ langdetect==1.0.9
 numpy==1.24.4
 opencv-python==4.8.0.76
 matplotlib==3.8.4
+requests==2.31.0
 
 # ML Frameworks (only include if you use them)
-
-
+torch==2.2.2
+torchvision==0.17.2
+tensorflow==2.15.0
 # YOLOv8
 ultralytics==8.1.38
 
