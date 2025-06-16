@@ -4,20 +4,11 @@ import base64
 import numpy as np
 import cv2
 from PIL import Image
-from flask import Flask, request, jsonify, render_template
 import requests
-from werkzeug.utils import secure_filename
-
-app = Flask(__name__)
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+import streamlit as st
 
 # Function to detect Braille using Roboflow direct HTTP API
-def detect_braille(image_path, conf_threshold=0.25):
-    with open(image_path, "rb") as f:
-        image_bytes = f.read()
-
+def detect_braille(image_bytes, conf_threshold=0.25):
     # Run inference using HTTP request
     response = requests.post(
         "https://detect.roboflow.com/braille-final-05-05/2",
@@ -56,7 +47,7 @@ def detect_braille(image_path, conf_threshold=0.25):
         })
 
     if not detections:
-        return "", []
+        return None, []
 
     # Sort and group detections into rows
     detections.sort(key=lambda d: d['y_center'])
@@ -99,32 +90,28 @@ def detect_braille(image_path, conf_threshold=0.25):
 
     return img_str, detected_text_rows
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+def main():
+    st.title("Braille Detection with Roboflow")
 
-@app.route('/detect', methods=['POST'])
-def detect():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image uploaded'}), 400
+    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
-    image_file = request.files['image']
-    filename = secure_filename(image_file.filename)
-    image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    image_file.save(image_path)
+    conf_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.01)
 
-    conf_threshold = float(request.form.get("confidence", 0.25))
+    if uploaded_file is not None:
+        image_bytes = uploaded_file.read()
 
-    try:
-        img_str, text_rows = detect_braille(image_path, conf_threshold)
-        return jsonify({
-            'detected_image': f'data:image/jpeg;base64,{img_str}',
-            'detected_text_rows': text_rows
-        })
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        with st.spinner("Detecting Braille..."):
+            try:
+                img_str, text_rows = detect_braille(image_bytes, conf_threshold)
+                if img_str is None:
+                    st.warning("No Braille detected.")
+                else:
+                    st.image(base64.b64decode(img_str), caption="Detected Braille", use_column_width=True)
+                    st.subheader("Detected Text Rows")
+                    for row in text_rows:
+                        st.write(row)
+            except Exception as e:
+                st.error(f"Error during detection: {e}")
 
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    main()
